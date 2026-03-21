@@ -1,9 +1,7 @@
 """MCP server wrapping the pyhive-integration library for Hive smart home control."""
 
-import asyncio
 import json
 import logging
-from typing import Any
 
 import aiohttp
 from mcp.server.fastmcp import FastMCP
@@ -65,7 +63,7 @@ async def hive_login(username: str, password: str) -> str:
 
     _session = aiohttp.ClientSession()
     _hive = Hive(websession=_session, username=username, password=password)
-    result = await _hive.login()
+    result = _hive.login()
     return json.dumps(result)
 
 
@@ -79,7 +77,7 @@ async def hive_sms_2fa(code: str, session: str) -> str:
     """
     h = _get_hive()
     session_obj = json.loads(session)
-    result = await h.sms2fa(code, session_obj)
+    result = h.sms2fa(code, session_obj)
     return json.dumps(result)
 
 
@@ -101,7 +99,7 @@ async def hive_device_login(
     _hive.auth.device_group_key = device_group_key
     _hive.auth.device_key = device_key
     _hive.auth.device_password = device_password
-    result = await _hive.deviceLogin()
+    result = _hive.deviceLogin()
     return json.dumps(result)
 
 
@@ -117,7 +115,7 @@ async def hive_start_session(config: str = "{}") -> str:
 
     h = _get_hive()
     cfg = json.loads(config) if config else {}
-    raw_devices = await h.startSession(cfg if cfg else None)
+    raw_devices = h.startSession(cfg)
 
     # Organise devices by type for easier lookup
     _devices = {}
@@ -154,7 +152,7 @@ async def hive_list_devices() -> str:
 async def hive_refresh_tokens() -> str:
     """Refresh the Hive authentication tokens."""
     h = _get_hive()
-    result = await h.hiveRefreshTokens(force_refresh=True)
+    result = h.hiveRefreshTokens()
     return json.dumps(result)
 
 
@@ -168,15 +166,15 @@ async def hive_light_get_state(device_name_or_id: str) -> str:
     """Get the full state of a Hive light (on/off, brightness, colour, colour temperature)."""
     h = _get_hive()
     dev = _find_device("light", device_name_or_id)
-    await h.updateData(dev)
+    h.updateData(dev)
     state = {
-        "state": await h.light.getState(dev),
-        "brightness": await h.light.getBrightness(dev),
-        "color_temp": await h.light.getColorTemp(dev),
-        "min_color_temp": await h.light.getMinColorTemp(dev),
-        "max_color_temp": await h.light.getMaxColorTemp(dev),
-        "color": await h.light.getColor(dev),
-        "color_mode": await h.light.getColorMode(dev),
+        "state": h.light.getState(dev),
+        "brightness": h.light.getBrightness(dev),
+        "color_temp": h.light.getColorTemp(dev),
+        "min_color_temp": h.light.getMinColorTemp(dev),
+        "max_color_temp": h.light.getMaxColorTemp(dev),
+        "color": h.light.getColor(dev),
+        "color_mode": h.light.getColorMode(dev),
     }
     return json.dumps(state)
 
@@ -199,7 +197,7 @@ async def hive_light_turn_on(
     h = _get_hive()
     dev = _find_device("light", device_name_or_id)
     color = [color_r, color_g, color_b] if all(v is not None for v in [color_r, color_g, color_b]) else None
-    result = await h.light.turnOn(dev, brightness, color_temp, color)
+    result = h.light.turnOn(dev, brightness, color_temp, color)
     return json.dumps(result)
 
 
@@ -208,7 +206,7 @@ async def hive_light_turn_off(device_name_or_id: str) -> str:
     """Turn a Hive light off."""
     h = _get_hive()
     dev = _find_device("light", device_name_or_id)
-    result = await h.light.turnOff(dev)
+    result = h.light.turnOff(dev)
     return json.dumps(result)
 
 
@@ -217,7 +215,7 @@ async def hive_light_set_brightness(device_name_or_id: str, brightness: int) -> 
     """Set the brightness of a Hive light (1-100)."""
     h = _get_hive()
     dev = _find_device("light", device_name_or_id)
-    result = await h.light.setBrightness(dev, brightness)
+    result = h.light.setBrightness(dev, brightness)
     return json.dumps(result)
 
 
@@ -226,7 +224,7 @@ async def hive_light_set_color_temp(device_name_or_id: str, color_temp: int) -> 
     """Set the colour temperature of a Hive light in Kelvin."""
     h = _get_hive()
     dev = _find_device("light", device_name_or_id)
-    result = await h.light.setColorTemp(dev, color_temp)
+    result = h.light.setColorTemp(dev, color_temp)
     return json.dumps(result)
 
 
@@ -237,7 +235,7 @@ async def hive_light_set_color(
     """Set the RGB colour of a Hive light (0-255 each channel)."""
     h = _get_hive()
     dev = _find_device("light", device_name_or_id)
-    result = await h.light.setColor(dev, [red, green, blue])
+    result = h.light.setColor(dev, [red, green, blue])
     return json.dumps(result)
 
 
@@ -255,18 +253,18 @@ async def hive_heating_get_state(device_name_or_id: str) -> str:
     """
     h = _get_hive()
     dev = _find_device("climate", device_name_or_id)
-    await h.updateData(dev)
+    h.updateData(dev)
     state = {
-        "current_temperature": await h.heating.getCurrentTemperature(dev),
-        "target_temperature": await h.heating.getTargetTemperature(dev),
-        "min_temperature": await h.heating.getMinTemperature(dev),
-        "max_temperature": await h.heating.getMaxTemperature(dev),
-        "mode": await h.heating.getMode(dev),
-        "state": await h.heating.getState(dev),
-        "current_operation": await h.heating.getCurrentOperation(dev),
-        "boost_active": await h.heating.getBoostStatus(dev),
-        "boost_time_remaining": await h.heating.getBoostTime(dev),
-        "operation_modes": await h.heating.getOperationModes(),
+        "current_temperature": h.heating.getCurrentTemperature(dev),
+        "target_temperature": h.heating.getTargetTemperature(dev),
+        "min_temperature": h.heating.getMinTemperature(dev),
+        "max_temperature": h.heating.getMaxTemperature(dev),
+        "mode": h.heating.getMode(dev),
+        "state": h.heating.getState(dev),
+        "current_operation": h.heating.getCurrentOperation(dev),
+        "boost_active": h.heating.getBoostStatus(dev),
+        "boost_time_remaining": h.heating.getBoostTime(dev),
+        "operation_modes": h.heating.getOperationModes(),
     }
     return json.dumps(state)
 
@@ -278,7 +276,7 @@ async def hive_heating_set_temperature(
     """Set the target temperature for a Hive heating zone (in °C)."""
     h = _get_hive()
     dev = _find_device("climate", device_name_or_id)
-    result = await h.heating.setTargetTemperature(dev, str(temperature))
+    result = h.heating.setTargetTemperature(dev, str(temperature))
     return json.dumps(result)
 
 
@@ -291,7 +289,7 @@ async def hive_heating_set_mode(device_name_or_id: str, mode: str) -> str:
     """
     h = _get_hive()
     dev = _find_device("climate", device_name_or_id)
-    result = await h.heating.setMode(dev, mode)
+    result = h.heating.setMode(dev, mode)
     return json.dumps(result)
 
 
@@ -308,7 +306,7 @@ async def hive_heating_boost_on(
     """
     h = _get_hive()
     dev = _find_device("climate", device_name_or_id)
-    result = await h.heating.setBoostOn(dev, str(minutes), temperature)
+    result = h.heating.setBoostOn(dev, str(minutes), temperature)
     return json.dumps(result)
 
 
@@ -317,7 +315,7 @@ async def hive_heating_boost_off(device_name_or_id: str) -> str:
     """Cancel boost mode on a Hive heating zone."""
     h = _get_hive()
     dev = _find_device("climate", device_name_or_id)
-    result = await h.heating.setBoostOff(dev)
+    result = h.heating.setBoostOff(dev)
     return json.dumps(result)
 
 
@@ -326,7 +324,7 @@ async def hive_heating_get_schedule(device_name_or_id: str) -> str:
     """Get the now/next/later schedule entries for a Hive heating zone."""
     h = _get_hive()
     dev = _find_device("climate", device_name_or_id)
-    result = await h.climate.getScheduleNowNextLater(dev)
+    result = h.heating.getScheduleNowNextLater(dev)
     return json.dumps(result)
 
 
@@ -340,13 +338,13 @@ async def hive_hotwater_get_state(device_name_or_id: str) -> str:
     """Get the current state of the Hive hot water system."""
     h = _get_hive()
     dev = _find_device("water_heater", device_name_or_id)
-    await h.updateData(dev)
+    h.updateData(dev)
     state = {
-        "mode": await h.hotwater.getMode(dev),
-        "state": await h.hotwater.getState(dev),
-        "boost_active": await h.hotwater.getBoost(dev),
-        "boost_time_remaining": await h.hotwater.getBoostTime(dev),
-        "operation_modes": await h.hotwater.getOperationModes(),
+        "mode": h.hotwater.getMode(dev),
+        "state": h.hotwater.getState(dev),
+        "boost_active": h.hotwater.getBoost(dev),
+        "boost_time_remaining": h.hotwater.getBoostTime(dev),
+        "operation_modes": h.hotwater.getOperationModes(),
     }
     return json.dumps(state)
 
@@ -360,7 +358,7 @@ async def hive_hotwater_set_mode(device_name_or_id: str, mode: str) -> str:
     """
     h = _get_hive()
     dev = _find_device("water_heater", device_name_or_id)
-    result = await h.hotwater.setMode(dev, mode)
+    result = h.hotwater.setMode(dev, mode)
     return json.dumps(result)
 
 
@@ -369,7 +367,7 @@ async def hive_hotwater_boost_on(device_name_or_id: str, minutes: int) -> str:
     """Enable boost on the Hive hot water system for the given number of minutes."""
     h = _get_hive()
     dev = _find_device("water_heater", device_name_or_id)
-    result = await h.hotwater.setBoostOn(dev, minutes)
+    result = h.hotwater.setBoostOn(dev, minutes)
     return json.dumps(result)
 
 
@@ -378,7 +376,7 @@ async def hive_hotwater_boost_off(device_name_or_id: str) -> str:
     """Cancel boost on the Hive hot water system."""
     h = _get_hive()
     dev = _find_device("water_heater", device_name_or_id)
-    result = await h.hotwater.setBoostOff(dev)
+    result = h.hotwater.setBoostOff(dev)
     return json.dumps(result)
 
 
@@ -387,7 +385,7 @@ async def hive_hotwater_get_schedule(device_name_or_id: str) -> str:
     """Get the now/next/later schedule entries for the Hive hot water system."""
     h = _get_hive()
     dev = _find_device("water_heater", device_name_or_id)
-    result = await h.waterheater.getScheduleNowNextLater(dev)
+    result = h.hotwater.getScheduleNowNextLater(dev)
     return json.dumps(result)
 
 
@@ -401,10 +399,10 @@ async def hive_switch_get_state(device_name_or_id: str) -> str:
     """Get the state and power usage of a Hive smart plug / switch."""
     h = _get_hive()
     dev = _find_device("switch", device_name_or_id)
-    await h.updateData(dev)
+    h.updateData(dev)
     state = {
-        "state": await h.switch.getState(dev),
-        "power_usage": await h.switch.getPowerUsage(dev),
+        "state": h.switch.getState(dev),
+        "power_usage": h.switch.getPowerUsage(dev),
     }
     return json.dumps(state)
 
@@ -414,7 +412,7 @@ async def hive_switch_turn_on(device_name_or_id: str) -> str:
     """Turn a Hive smart plug / switch on."""
     h = _get_hive()
     dev = _find_device("switch", device_name_or_id)
-    result = await h.switch.turnOn(dev)
+    result = h.switch.turnOn(dev)
     return json.dumps(result)
 
 
@@ -423,7 +421,7 @@ async def hive_switch_turn_off(device_name_or_id: str) -> str:
     """Turn a Hive smart plug / switch off."""
     h = _get_hive()
     dev = _find_device("switch", device_name_or_id)
-    result = await h.switch.turnOff(dev)
+    result = h.switch.turnOff(dev)
     return json.dumps(result)
 
 
@@ -437,10 +435,10 @@ async def hive_sensor_get_state(device_name_or_id: str) -> str:
     """Get the state of a Hive sensor (motion, door/window, etc.)."""
     h = _get_hive()
     dev = _find_device("sensor", device_name_or_id)
-    await h.updateData(dev)
+    h.updateData(dev)
     state = {
-        "state": await h.sensor.getState(dev),
-        "hub_online": await h.sensor.online(dev),
+        "state": h.sensor.getState(dev),
+        "hub_online": h.sensor.online(dev),
     }
     return json.dumps(state)
 
@@ -454,11 +452,11 @@ async def hive_sensor_get_state(device_name_or_id: str) -> str:
 async def hive_alarm_get_state(device_name_or_id: str) -> str:
     """Get the current mode and state of the Hive Home Shield alarm."""
     h = _get_hive()
-    dev = _find_device("alarm", device_name_or_id)
-    await h.updateData(dev)
+    dev = _find_device("alarm_control_panel",device_name_or_id)
+    h.updateData(dev)
     state = {
-        "mode": await h.alarm.getMode(),
-        "state": await h.alarm.getState(dev),
+        "mode": h.alarm.getMode(),
+        "state": h.alarm.getState(dev),
     }
     return json.dumps(state)
 
@@ -471,8 +469,8 @@ async def hive_alarm_set_mode(device_name_or_id: str, mode: str) -> str:
     Common modes: armed, disarmed, partial.
     """
     h = _get_hive()
-    dev = _find_device("alarm", device_name_or_id)
-    result = await h.alarm.setMode(dev, mode)
+    dev = _find_device("alarm_control_panel",device_name_or_id)
+    result = h.alarm.setMode(dev, mode)
     return json.dumps(result)
 
 

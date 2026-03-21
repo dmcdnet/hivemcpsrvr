@@ -682,7 +682,7 @@ dependencies = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "mcp", specifier = ">=1.0.0" },
-    { name = "pyhive-integration", specifier = ">=1.0.0" },
+    { name = "pyhive-integration", specifier = ">=1.0.8" },
 ]
 
 [[package]]
