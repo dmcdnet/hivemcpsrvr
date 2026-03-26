@@ -7,9 +7,15 @@ import logging
 import aiohttp
 from mcp.server.fastmcp import FastMCP
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--transport", default="stdio", choices=["stdio", "sse"])
+parser.add_argument("--host", default="0.0.0.0")
+parser.add_argument("--port", type=int, default=8000)
+args = parser.parse_args()
+
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("Hive Smart Home")
+mcp = FastMCP("Hive Smart Home", host=args.host, port=args.port)
 
 # Global session state
 _hive = None
@@ -481,12 +487,6 @@ async def hive_alarm_set_mode(device_name_or_id: str, mode: str) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--transport", default="stdio", choices=["stdio", "sse"])
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-
     if args.transport == "sse":
         mcp.run(transport="sse")
     else:
