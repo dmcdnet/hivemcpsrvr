@@ -447,6 +447,9 @@ async def hive_sensor_get_state(device_name_or_id: str) -> str:
         "state": h.sensor.getState(dev),
         "hub_online": h.sensor.online(dev),
     }
+    temperature = h.heating.getCurrentTemperature(dev)
+    if temperature is not None:
+        state["temperature"] = temperature
     return json.dumps(state)
 
 
@@ -491,7 +494,6 @@ def main():
         mcp.run(transport="sse")
     else:
         mcp.run()
-
 
 if __name__ == "__main__":
     main()
