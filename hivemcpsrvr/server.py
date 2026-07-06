@@ -3,24 +3,89 @@
 import argparse
 import json
 import logging
+import os
+from contextlib import asynccontextmanager
 
 import aiohttp
 from mcp.server.fastmcp import FastMCP
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--transport", default="stdio", choices=["stdio", "sse"])
-parser.add_argument("--host", default="0.0.0.0")
-parser.add_argument("--port", type=int, default=8000)
+parser.add_argument(
+    "--transport",
+    default=os.environ.get("HIVE_TRANSPORT", "stdio"),
+    choices=["stdio", "sse"],
+)
+parser.add_argument("--host", default=os.environ.get("HIVE_HOST", "0.0.0.0"))
+parser.add_argument(
+    "--port", type=int, default=int(os.environ.get("HIVE_PORT", "8000"))
+)
 args = parser.parse_args()
 
+logging.basicConfig(level=os.environ.get("HIVE_LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("Hive Smart Home", host=args.host, port=args.port)
+
+@asynccontextmanager
+async def _lifespan(server):
+    """Run device-credential auto-login inside the server's event loop.
+
+    The aiohttp session must be created within a running loop, so startup
+    login happens here rather than before mcp.run().
+    """
+    _auto_login()
+    try:
+        yield
+    finally:
+        await _close_session()
+
+
+mcp = FastMCP("Hive Smart Home", host=args.host, port=args.port, lifespan=_lifespan)
 
 # Global session state
 _hive = None
 _session = None
 _devices: dict[str, list[dict]] = {}
+
+
+def _organise_devices(raw_devices) -> dict:
+    """Group the raw device list returned by startSession by device type."""
+    global _devices
+    _devices = {}
+    if isinstance(raw_devices, list):
+        for dev in raw_devices:
+            dtype = dev.get("deviceType", "unknown")
+            _devices.setdefault(dtype, []).append(dev)
+    elif isinstance(raw_devices, dict):
+        _devices = raw_devices
+    return _devices
+
+
+def _start_session(config: dict) -> dict:
+    """Load and organise all devices for the current Hive instance."""
+    h = _get_hive()
+    return _organise_devices(h.startSession(config))
+
+
+def _device_login(device_group_key: str, device_key: str, device_password: str):
+    """Authenticate with reusable device credentials (no 2FA required)."""
+    global _hive, _session
+
+    from pyhiveapi import Hive
+
+    _session = aiohttp.ClientSession()
+    _hive = Hive(websession=_session)
+    _hive.auth.device_group_key = device_group_key
+    _hive.auth.device_key = device_key
+    _hive.auth.device_password = device_password
+    return _hive.deviceLogin()
+
+
+async def _close_session():
+    """Close the aiohttp session on shutdown, if one was opened."""
+    global _session
+    if _session is not None and not _session.closed:
+        await _session.close()
+        _session = None
 
 
 def _get_hive():
@@ -97,17 +162,34 @@ async def hive_device_login(
 
     After a successful login call hive_start_session.
     """
-    global _hive, _session
-
-    from pyhiveapi import Hive
-
-    _session = aiohttp.ClientSession()
-    _hive = Hive(websession=_session)
-    _hive.auth.device_group_key = device_group_key
-    _hive.auth.device_key = device_key
-    _hive.auth.device_password = device_password
-    result = _hive.deviceLogin()
+    result = _device_login(device_group_key, device_key, device_password)
     return json.dumps(result)
+
+
+@mcp.tool()
+async def hive_register_device(device_name: str = "") -> str:
+    """
+    Register this client as a trusted device and return reusable device
+    credentials for headless / Docker auto-login.
+
+    Run this ONCE after a successful interactive login (hive_login +
+    hive_sms_2fa). It returns device_group_key, device_key and
+    device_password – store them as the environment variables
+    HIVE_DEVICE_GROUP_KEY / HIVE_DEVICE_KEY / HIVE_DEVICE_PASSWORD so the
+    server can log in automatically on startup without SMS 2FA.
+    """
+    h = _get_hive()
+    h.auth.device_registration(device_name or None)
+    device_group_key, device_key, device_password = h.auth.get_device_data()
+    return json.dumps(
+        {
+            "HIVE_DEVICE_GROUP_KEY": device_group_key,
+            "HIVE_DEVICE_KEY": device_key,
+            "HIVE_DEVICE_PASSWORD": device_password,
+            "note": "Store these as environment variables for headless auto-login. "
+            "Keep them secret.",
+        }
+    )
 
 
 @mcp.tool()
@@ -118,20 +200,8 @@ async def hive_start_session(config: str = "{}") -> str:
     Optionally pass a JSON config dict (e.g. with stored tokens).
     Returns the full device list grouped by type.
     """
-    global _devices
-
-    h = _get_hive()
     cfg = json.loads(config) if config else {}
-    raw_devices = h.startSession(cfg)
-
-    # Organise devices by type for easier lookup
-    _devices = {}
-    if isinstance(raw_devices, list):
-        for dev in raw_devices:
-            dtype = dev.get("deviceType", "unknown")
-            _devices.setdefault(dtype, []).append(dev)
-    elif isinstance(raw_devices, dict):
-        _devices = raw_devices
+    _start_session(cfg)
 
     summary = {dtype: len(devs) for dtype, devs in _devices.items()}
     return json.dumps({"status": "ok", "device_counts": summary, "devices": _devices})
@@ -487,6 +557,39 @@ async def hive_alarm_set_mode(device_name_or_id: str, mode: str) -> str:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+
+def _auto_login() -> bool:
+    """Log in on startup using device credentials from the environment.
+
+    Returns True if an auto-login was attempted (and succeeded), False if no
+    device credentials were provided. Failures are logged but do not crash the
+    server – the interactive login tools remain available as a fallback.
+    """
+    device_group_key = os.environ.get("HIVE_DEVICE_GROUP_KEY")
+    device_key = os.environ.get("HIVE_DEVICE_KEY")
+    device_password = os.environ.get("HIVE_DEVICE_PASSWORD")
+
+    if not (device_group_key and device_key and device_password):
+        logger.info(
+            "No HIVE_DEVICE_* credentials in environment; "
+            "skipping auto-login (use the login tools manually)."
+        )
+        return False
+
+    try:
+        logger.info("Auto-login using device credentials from environment.")
+        _device_login(device_group_key, device_key, device_password)
+        _start_session({})
+        counts = {dtype: len(devs) for dtype, devs in _devices.items()}
+        logger.info("Auto-login succeeded. Loaded devices: %s", counts)
+        return True
+    except Exception:
+        logger.exception(
+            "Auto-login with device credentials failed. "
+            "The interactive login tools are still available."
+        )
+        return False
 
 
 def main():

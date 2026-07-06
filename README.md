@@ -50,3 +50,47 @@ Add to `~/.config/claude/claude_desktop_config.json`:
 5. Use any device tool with the device name or ID
 
 > **Note:** Only the Hive owner account is supported — guest accounts are not.
+
+## Running headless / in Docker
+
+Hive requires SMS 2FA on interactive username/password logins, which is
+impractical for an unattended container. Instead, use **device credentials**:
+authenticate once interactively, register this client as a trusted device, then
+reuse the resulting credentials to log in automatically with no 2FA.
+
+### 1. One-time bootstrap (obtain device credentials)
+
+Run the server locally over stdio and, via your MCP client, call:
+
+1. `hive_login` with your email + password
+2. `hive_sms_2fa` with the SMS code
+3. `hive_register_device` — returns `HIVE_DEVICE_GROUP_KEY`,
+   `HIVE_DEVICE_KEY` and `HIVE_DEVICE_PASSWORD`
+
+Copy those three values into a `.env` file (see `.env.example`). Keep them
+secret — they grant access to your Hive account.
+
+### 2. Run the container
+
+Credentials are injected at runtime via environment variables (never baked into
+the image). On startup the server reads `HIVE_DEVICE_*`, logs in automatically,
+and loads devices — no tool calls needed.
+
+```bash
+docker build -t hivemcpsrvr .
+docker run --env-file .env -p 8000:8000 hivemcpsrvr
+```
+
+Or with Docker Compose (reads `.env` automatically):
+
+```bash
+cp .env.example .env   # then fill in the HIVE_DEVICE_* values
+docker compose up --build
+```
+
+The container listens on SSE at `http://<host>:8000/sse` by default
+(`HIVE_TRANSPORT`, `HIVE_HOST`, `HIVE_PORT` are configurable).
+
+> **Security:** prefer `--env-file`, Docker/Swarm secrets, or your
+> orchestrator's secret store over inline `-e` flags, and never commit `.env`
+> (it is git-ignored).

@@ -1,0 +1,15 @@
+services:
+  hivemcpsrvr:
+    build: .
+    image: hivemcpsrvr
+    container_name: hivemcpsrvr
+    restart: unless-stopped
+    # Credentials and config come from .env (copy .env.example -> .env).
+    # Never commit the real .env; it is git-ignored.
+    # Precedence: image defaults (Dockerfile ENV) < .env (env_file).
+    env_file:
+      - .env
+    # Publish the SSE port. HIVE_PORT is read from .env via Compose
+    # interpolation (defaults to 8000 if unset).
+    ports:
+      - "${HIVE_PORT:-8000}:${HIVE_PORT:-8000}"
